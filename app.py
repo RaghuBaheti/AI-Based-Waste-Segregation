@@ -1,19 +1,24 @@
+from pathlib import Path
+from uuid import uuid4
+
 from flask import Flask, render_template, request, send_from_directory
+from werkzeug.utils import secure_filename
+
 from predict import predict_waste
-import os
 
 app = Flask(__name__)
+UPLOAD_FOLDER = Path(__file__).resolve().parent / "uploads"
+app.config["UPLOAD_FOLDER"] = str(UPLOAD_FOLDER)
+app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
+UPLOAD_FOLDER.mkdir(exist_ok=True)
+
+
 @app.route("/uploads/<filename>")
 def uploaded_file(filename):
     return send_from_directory(
         app.config["UPLOAD_FOLDER"],
         filename
     )
-
-UPLOAD_FOLDER = "uploads"
-app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
-
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 
 @app.route("/")
@@ -38,11 +43,16 @@ def analyze():
             error="Please select an image."
         )
 
-    image_path = os.path.join(
-        app.config["UPLOAD_FOLDER"],
-        image.filename
-    )
+    safe_filename = secure_filename(image.filename)
+    extension = Path(safe_filename).suffix.lower()
+    if extension not in {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"}:
+        return render_template(
+            "index.html",
+            error="Please upload a supported image file."
+        )
 
+    filename = f"{uuid4().hex}{extension}"
+    image_path = Path(app.config["UPLOAD_FOLDER"]) / filename
     image.save(image_path)
 
     try:
@@ -50,12 +60,10 @@ def analyze():
         waste_type, confidence = predict_waste(image_path)
 
         tips = {
-            "plastic": "Place plastic items in the recyclable waste category.",
-            "paper": "Keep paper clean and dry, then place it with recyclable paper waste.",
-            "metal": "Place metal items in the recyclable metal waste category.",
-            "glass": "Handle glass carefully and place it in the appropriate glass recycling category.",
-            "cardboard": "Flatten cardboard and place it with recyclable paper/cardboard waste.",
-            "trash": "This item could not be identified as one of the recyclable categories."
+            "general": "Place this item in the standard general waste bin.",
+            "hazardous": "Handle carefully and dispose at a hazardous waste facility.",
+            "organic": "Perfect for composting! Place in the organic green bin.",
+            "recyclable": "Clean and dry this item before placing it in recycling."
         }
 
         tip = tips.get(
@@ -68,7 +76,7 @@ def analyze():
             result=waste_type,
             confidence=round(confidence, 2),
             tip=tip,
-            image_file=image.filename
+            image_file=filename
         )
 
     except Exception as e:

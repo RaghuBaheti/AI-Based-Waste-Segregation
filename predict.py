@@ -1,50 +1,26 @@
-import tensorflow as tf
-from PIL import Image
+from pathlib import Path
+
 import numpy as np
+import tensorflow as tf
+from tensorflow.keras.preprocessing import image
 
-MODEL_PATH = "model/waste_model.tflite"
 
-interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
-interpreter.allocate_tensors()
-
-input_details = interpreter.get_input_details()
-output_details = interpreter.get_output_details()
-
-class_names = [
-    "cardboard",
-    "glass",
-    "metal",
-    "paper",
-    "plastic",
-    "trash"
-]
+MODEL_PATH = Path(__file__).resolve().parent / "model" / "waste_classifier_v2.keras"
+CLASS_NAMES = ["general", "hazardous", "organic", "recyclable"]
+model = tf.keras.models.load_model(MODEL_PATH)
 
 
 def predict_waste(image_path):
+    img = image.load_img(image_path, target_size=(128, 128))
+    img_array = image.img_to_array(img)
+    img_array = tf.expand_dims(img_array, 0)
 
-    image = Image.open(image_path).convert("RGB")
-    image = image.resize((160, 160))
+    predictions = model.predict(img_array, verbose=0)
+    if len(predictions[0]) != len(CLASS_NAMES):
+        raise ValueError(
+            f"Model returned {len(predictions[0])} classes; "
+            f"expected {len(CLASS_NAMES)}."
+        )
 
-    image_array = np.array(image, dtype=np.float32) / 255.0
-    image_array = np.expand_dims(image_array, axis=0)
-
-    interpreter.set_tensor(
-        input_details[0]["index"],
-        image_array
-    )
-
-    interpreter.invoke()
-
-    predictions = interpreter.get_tensor(
-        output_details[0]["index"]
-    )
-
-    predicted_index = np.argmax(predictions[0])
-
-    predicted_class = class_names[predicted_index]
-
-    confidence = float(
-        predictions[0][predicted_index] * 100
-    )
-
-    return predicted_class, confidence
+    predicted_index = int(np.argmax(predictions[0]))
+    return CLASS_NAMES[predicted_index], float(predictions[0][predicted_index] * 100)
