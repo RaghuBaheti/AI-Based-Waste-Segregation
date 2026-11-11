@@ -1,6 +1,6 @@
 Flask
 Flask-Cors
-tflite-runtime
+tensorflow-cpu
 Pillow
 numpy
 gunicorn
